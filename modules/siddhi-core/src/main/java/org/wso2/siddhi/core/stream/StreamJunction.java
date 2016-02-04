@@ -25,7 +25,10 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class StreamJunction {
+    /*本来以为Junction 里面有很多队列，接受用户数据发射进来，其实不是，Junction相当于是个代理，相当于一个集市
+    * 将数据流的交易管理起来，可以理解成单生产者，多消费者模型，Junction里面就是多个消费者*/
     private List<StreamReceiver> streamReceivers = new CopyOnWriteArrayList<StreamReceiver>();
+    /*这个相当于一个线程安全的arraylist*/
     private String streamId;
     private EventMonitorService eventMonitorService;
 
@@ -41,15 +44,17 @@ public class StreamJunction {
         if (eventMonitorService.isEnableStats()) {
             eventMonitorService.calculateStats(allEvents);
         }
+        /*时间监听服务，是一个多线程共享的对象，目的就是为了追踪和统计tps等，尤其这个trace服务，
+        * 相当于把全部事件给你打开了，这个在超大规模的流处理场景中，肯定是不行的*/
         for (StreamReceiver handlerProcessor : streamReceivers) {
             handlerProcessor.receive(allEvents);
-        }
+        }/*发射数据，其实就是让那些消费者来消费*/
     }
 
     public synchronized void addEventFlow(StreamReceiver streamReceiver) {
         //in reverse order to execute the later states first to overcome to dependencies of count states
         streamReceivers.add(0, streamReceiver);
-    }
+    }/*新加的消费者反而最早消费到数据，*/
 
     public synchronized void removeEventFlow(HandlerProcessor queryStreamProcessor) {
         streamReceivers.remove(queryStreamProcessor);

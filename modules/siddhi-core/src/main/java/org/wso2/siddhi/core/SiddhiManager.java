@@ -66,7 +66,13 @@ public class SiddhiManager {
 
     private SiddhiContext siddhiContext;
     private ConcurrentMap<String, StreamJunction> streamJunctionMap = new ConcurrentHashMap<String, StreamJunction>(); //contains definition
-    private ConcurrentMap<String, AbstractDefinition> streamTableDefinitionMap = new ConcurrentHashMap<String, AbstractDefinition>(); //contains stream & table definition
+    private ConcurrentMap<String, AbstractDefinition> streamTableDefinitionMap =
+            new ConcurrentHashMap<String, AbstractDefinition>(); //contains stream & table definition
+
+    /*siddhim支持流定义和表的定义，表的定义是要做外部存储用的，即把数据直接插入到表里*/
+    /*用户定义的流，表，都记在这个map里，重启也就没了，每次新加流定义，都要到这里检查一下是否存在
+    * <streamID,streamDefinition>
+    * */
     private ConcurrentMap<String, QueryManager> queryProcessorMap = new ConcurrentHashMap<String, QueryManager>();
     private ConcurrentMap<String, InputHandler> inputHandlerMap = new ConcurrentHashMap<String, InputHandler>();
     private ConcurrentMap<String, EventTable> eventTableMap = new ConcurrentHashMap<String, EventTable>(); //contains event tables
@@ -76,11 +82,12 @@ public class SiddhiManager {
 
     public SiddhiManager() {
         this(new SiddhiConfiguration());
-    }
+    }/*无参构造方法，使用一个无参的默认的配置*/
 
     public SiddhiManager(SiddhiConfiguration siddhiConfiguration) {
 
-        if (siddhiConfiguration.isDistributedProcessing()) {
+        if (siddhiConfiguration.isDistributedProcessing()) {/*分布式处理？siddhi开始支持分布式处理方法
+        采用hazelCast做协调服务，功能可类比zookeeper，分布式处理是否需要一个loadbalancer模块*/
             HazelcastInstance hazelcastInstance = Hazelcast.getHazelcastInstanceByName(siddhiConfiguration.getInstanceIdentifier());
             if (hazelcastInstance == null) {
                 this.siddhiContext = new SiddhiContext(siddhiConfiguration.getQueryPlanIdentifier(), SiddhiContext.ProcessingState.ENABLE_INTERNAL);
@@ -91,53 +98,74 @@ public class SiddhiManager {
                 hazelcastInstance = Hazelcast.newHazelcastInstance(hazelcastConf);
             } else {
                 this.siddhiContext = new SiddhiContext(siddhiConfiguration.getQueryPlanIdentifier(), SiddhiContext.ProcessingState.ENABLE_EXTERNAL);
-            }
+            }/*分布式模式的sidddhimanager要多构建一个hazelCast实例，我们可以设想使用zookeeper实现
+            此外都要构造siddhicontext，传入getQueryPlanIdentifier，一个字符串类型的标识符，其次设置流处理状态内部or外部，所谓内部就是将处理状态存储在
+            hazelcastInstance
+
+            */
             siddhiContext.setHazelcastInstance(hazelcastInstance);
-            siddhiContext.setGlobalIndexGenerator(new GlobalIndexGenerator(siddhiContext));
+            siddhiContext.setGlobalIndexGenerator(new GlobalIndexGenerator(siddhiContext));/*设置全局index*/
         } else {
             this.siddhiContext = new SiddhiContext(siddhiConfiguration.getQueryPlanIdentifier(), SiddhiContext.ProcessingState.DISABLED);
-        }
+        }/*非分布式情况下，单机处理器，不需要处理这些问题，直接关闭处理状态保存，分布式的状态要保持一致，因此才需要考虑单机的状态共享的问题*/
 
-        this.siddhiContext.setEventBatchSize(siddhiConfiguration.getEventBatchSize());
-        this.siddhiContext.setAsyncProcessing(siddhiConfiguration.isAsyncProcessing());
-        this.siddhiContext.setSiddhiExtensions(siddhiConfiguration.getSiddhiExtensions());
-        this.siddhiContext.setThreadBarrier(new ThreadBarrier());
+        this.siddhiContext.setEventBatchSize(siddhiConfiguration.getEventBatchSize());/*int类型，batch的方式处理
+        可以提升吞吐量*/
+        this.siddhiContext.setAsyncProcessing(siddhiConfiguration.isAsyncProcessing());/*异步处理，以延时换吞吐,提高性能*/
+        this.siddhiContext.setSiddhiExtensions(siddhiConfiguration.getSiddhiExtensions());/*支持sql自定义扩展功能，发射的类列表*/
+        this.siddhiContext.setThreadBarrier(new ThreadBarrier());/*高并发锁，线程同步用*/
         this.siddhiContext.setThreadPoolExecutor(new ThreadPoolExecutor(siddhiConfiguration.getThreadExecutorCorePoolSize(),
                 siddhiConfiguration.getThreadExecutorMaxPoolSize(),
                 50,
                 TimeUnit.MICROSECONDS,
                 new LinkedBlockingQueue<Runnable>(),
                 new SiddhiThreadFactory("Executor")));
-        this.siddhiContext.setScheduledExecutorService(Executors.newScheduledThreadPool(siddhiConfiguration.getThreadSchedulerCorePoolSize(), new SiddhiThreadFactory("Scheduler")));
+        /*设置一个线程池*/
+        this.siddhiContext.setScheduledExecutorService(
+                Executors.newScheduledThreadPool(siddhiConfiguration.getThreadSchedulerCorePoolSize(), new SiddhiThreadFactory("Scheduler"))
+        );
+        /*线程调度服务*/
         this.siddhiContext.setSnapshotService(new SnapshotService(siddhiContext));
+        /*加入了内存里的snapshot服务*/
         this.siddhiContext.setPersistenceService(new PersistenceService(siddhiContext));
+        /*外部持久化服务*/
         this.siddhiContext.setEventMonitorService(new EventMonitorService(siddhiContext));
-
+        /*事件监视服务*/
 
     }
 
 
     public InputHandler defineStream(StreamDefinition streamDefinition) {
-        if (!checkEventStreamExist(streamDefinition)) {
+        if (!checkEventStreamExist(streamDefinition)) {//1、检查streamid是否重复
+            /*2、流定义缓存起来*/
             streamTableDefinitionMap.put(streamDefinition.getStreamId(), streamDefinition);
+            /*3、Junction的意思是汇聚点，集结点的意思，每个流都有一个Junction，还记得inputHandler吗，
+            * sendEvent就是把数据发给它，即发给它里面的队列，阻塞队列*/
             StreamJunction streamJunction = streamJunctionMap.get(streamDefinition.getStreamId());
+            /*同样的，siddhi会记住每个stream的Junction*/
             if (streamJunction == null) {
                 streamJunction = new StreamJunction(streamDefinition.getStreamId(), siddhiContext.getEventMonitorService());
                 streamJunctionMap.put(streamDefinition.getStreamId(), streamJunction);
-            }
+            }/*因为前面流定义的时候已经检查过重复的问题了，所以这里不再检查Junction的重复问题*/
             InputHandler inputHandler = new InputHandler(streamDefinition.getStreamId(), streamJunction, siddhiContext);
+            /*看大没有inputhandler就是跟Junction关联的一个东西，说白了就是通过它我们可以往Junction的队列中发射数据
+            *
+            * 时间monitorserver是共享的，*/
             inputHandlerMap.put(streamDefinition.getStreamId(), inputHandler);
+            /*同样inputhandler也集中引用起来，方便根据streamID直接找到*/
             return inputHandler;
         } else {
             return inputHandlerMap.get(streamDefinition.getStreamId());
-        }
+        }/*如果已经有了，那么肯定给这个流加过Junction，自然就有inputhandler这些配套的玩意*/
 
     }
 
     public InputHandler defineStream(String streamDefinition) throws SiddhiParserException {
         return defineStream(SiddhiCompiler.parseStreamDefinition(streamDefinition));
 
-    }
+    }/*给用户都是支持sql的接口，antlr负责把sql流定义转换成StreamDefinition对象
+    然后做流定义，流定义一定都是在内存中的，也就是重启服务，流定义会消失，所以使用siddhi做服务，做计算
+    需要外部存储保存流定义，以及query*/
 
     public void removeStream(String streamId) {
         AbstractDefinition abstractDefinition = streamTableDefinitionMap.get(streamId);
@@ -181,10 +209,14 @@ public class SiddhiManager {
     private boolean checkEventStreamExist(StreamDefinition newStreamDefinition) {
         AbstractDefinition definition = streamTableDefinitionMap.get(newStreamDefinition.getStreamId());
         if (definition != null) {
-            if (definition instanceof TableDefinition) {
-                throw new DifferentDefinitionAlreadyExistException("Table " + newStreamDefinition.getStreamId() + " is already defined as " + definition + ", hence cannot define " + newStreamDefinition);
+            if (definition instanceof TableDefinition) {/*任何重名的都不行，因为会覆盖前面的流定义
+            表 定义名字相同，一定要抛异常，如果流定义名字相同，并且字段不相同的，也会抛异常
+            建议你换个名字，如果名字相同，内容也相同，应该是建议你无需重新添加，或者你换个名字好了*/
+                throw new DifferentDefinitionAlreadyExistException("Table " + newStreamDefinition.getStreamId() +
+                        " is already defined as " + definition + ", hence cannot define " + newStreamDefinition);
             } else if (!definition.getAttributeList().equals(newStreamDefinition.getAttributeList())) {
-                throw new DifferentDefinitionAlreadyExistException("Stream " + newStreamDefinition.getStreamId() + " is already defined as " + definition + ", hence cannot define " + newStreamDefinition);
+                throw new DifferentDefinitionAlreadyExistException("Stream " + newStreamDefinition.getStreamId() +
+                        " is already defined as " + definition + ", hence cannot define " + newStreamDefinition);
             } else {
                 return true;
             }
@@ -291,6 +323,7 @@ public class SiddhiManager {
 //    }
 
     public String addQuery(Query query) {
+        /*这个就比较复杂了，一个sql，select attr1,sum(),avg, from streamID#windowbatch,length, insert into stream for current */
         QueryManager queryManager = new QueryManager(query, streamTableDefinitionMap, streamJunctionMap, eventTableMap, partitionDefinitionMap, siddhiContext);
         OutputCallback outputCallback = queryManager.getOutputCallback();
         if (outputCallback != null && outputCallback instanceof InsertIntoStreamCallback) {

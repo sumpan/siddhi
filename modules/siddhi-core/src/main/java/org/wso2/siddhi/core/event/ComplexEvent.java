@@ -25,4 +25,6 @@ import java.io.Serializable;
 public interface ComplexEvent extends Serializable {
 
     long getTimeStamp();
-}
+}/*全部事件因为都实现这个接口，因此什么叫事件？
+
+带有时间戳 + 数据信息的结构，就是事件*/

@@ -25,12 +25,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 public abstract class AbstractDefinition implements ExecutionPlan {
-
+/*实现执行计划接口，执行计划接口本身没有定义什么接口方法*/
     protected String id;
     protected List<Attribute> attributeList = new ArrayList<Attribute>();
+    /*一个字段的名字和类型，使用Attribute来封装*/
 
-
-
+/*检查属性的目的就是怕有重复的字段*/
     protected void checkAttribute(String attributeName) {
         for (Attribute attribute : attributeList) {
             if (attribute.getName().equals(attributeName)) {
@@ -51,7 +51,8 @@ public abstract class AbstractDefinition implements ExecutionPlan {
         }
         throw new AttributeNotExistException("Cannot find attribute type as " + attributeName + " does not exist in "+id);
     }
-
+    /*流定义的字段是有先后顺序的，使用list来装这些字段，这样做其实有好处的，后面会提到
+    * 提供获取字段位置的方法*/
     public int getAttributePosition(String attributeName) {
         for (int i = 0, attributeListSize = attributeList.size(); i < attributeListSize; i++) {
             Attribute attribute = attributeList.get(i);
@@ -70,7 +71,7 @@ public abstract class AbstractDefinition implements ExecutionPlan {
             attributeNameArray[i] = attributeList.get(i).getName();
         }
         return attributeNameArray;
-    }
+    }/*转换成字符串数组，拿到字段的名称列表*/
 
     public String getId() {
         return id;

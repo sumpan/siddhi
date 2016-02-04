@@ -45,6 +45,17 @@ public class FrequentWindowSample {
         **/
 
         siddhiManager.defineStream("define stream cseEventStream ( symbol string, price float )");
+        /*
+        *         siddhiManager.defineStream("define stream cseEventStream ( symbol string, price float )");
+            这样一个流定义背后，siddhi做了哪些事情
+
+            1、通过antlr将sql转换成一个流定义的结构，一个流就2个要素，一个是streamID，另一个是字段
+            2、siddhi给每个stream创建一个Junction容器，实际是个队列，用户接受用户发射的数据，
+            3、你往Junction发射数据，得有个趁手的工具，就是inputhandler，它把一些发射数据的方法封装好
+
+            siddhimanger将全部的streamdefinition，Junction，以及inputhandler都引用记录在内存里，方便你取用。
+        *inputhandler使用独占锁+condition的方式，往给消费者发送数据。
+        * */
         String queryReference = siddhiManager.addQuery("from  cseEventStream#window.frequent(2) " +
                                                        "select symbol, price " +
                                                        "insert into StockQuote;");

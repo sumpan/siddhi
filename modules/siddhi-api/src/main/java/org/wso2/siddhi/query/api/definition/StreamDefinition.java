@@ -18,7 +18,13 @@
 package org.wso2.siddhi.query.api.definition;
 
 public class StreamDefinition extends AbstractDefinition {
-
+    /*流定义的结构其实非常简单，无非就是：
+    * 1、stream起个名字，叫做streamID,y用于区别不同的流
+    * 2、每个流有哪些字段，每个字段哪些类型（7种）
+    *
+    * 7种类型分别是：
+    * int，double,float,long,boolean,String,type
+    * 其中type 有别的用处，相当于object类型*/
     public StreamDefinition name(String streamId) {
         id = streamId;
         return this;

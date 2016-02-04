@@ -33,11 +33,13 @@ public class InputHandler {
         this.streamId = streamId;
         this.streamJunction = streamJunction;
         this.threadBarrier =siddhiContext.getThreadBarrier();
-    }
+    }/*所有的InputHandler对象共享同一个ThreadBarrier*/
 
     public void send(Object[] data) throws InterruptedException {
         StreamEvent event = new InEvent(streamId, System.currentTimeMillis(), data);
-        threadBarrier.pass();
+        /*内部事件*/
+        threadBarrier.pass();/*首先尝试去拿那个独占锁，拿到之后，如果barrier open的话就释放掉，然后往下执行
+        即你要往下执行需要过两关，首先是拿锁，然后还有一个控制位，控制位状态不改变，你只能阻塞等，而不能执行数据发送任务*/
         streamJunction.send(event);
     }
 
