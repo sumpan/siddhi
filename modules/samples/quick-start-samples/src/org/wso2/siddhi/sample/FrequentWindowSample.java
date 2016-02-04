@@ -34,7 +34,15 @@ public class FrequentWindowSample {
 
         // Create Siddhi Manager
         SiddhiManager siddhiManager = new SiddhiManager();
-
+        /*
+        * 1、创建一个siddhimanager实例，配置可选
+        * 2、定义事件流
+        * 3、加query
+        * 4、加stream callback或者query callback
+        * 5、partition可选
+        * 6、通过siddhimanager拿到对应流的inputhandler，send event
+        * 基本的流程就是这样的
+        **/
 
         siddhiManager.defineStream("define stream cseEventStream ( symbol string, price float )");
         String queryReference = siddhiManager.addQuery("from  cseEventStream#window.frequent(2) " +
